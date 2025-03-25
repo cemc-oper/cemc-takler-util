@@ -1,6 +1,12 @@
+import datetime
+import importlib.util
+import sys
 from typing import Optional, Literal, Union
+from types import ModuleType
+from pathlib import Path
 
 from takler.core.node import Node
+from takler.core import RepeatDate
 from takler.tasks.shell.constant import DEFAULT_TAKLER_SHELL_JOB_CMD, DEFAULT_TAKLER_SHELL_KILL_CMD
 
 from pydantic import BaseModel
@@ -49,6 +55,25 @@ def set_runtime(node: Node, runtime_config: RuntimeConfig):
         raise ValueError(f"runtime type is not supported: {runtime_type}")
 
 
+class SchedulingConfig(BaseModel):
+    scheduling_type: Literal["RepeatDate", "RepeatDay"]
+    start_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None
+
+
+def set_scheduling(node: Node, scheduling_config: SchedulingConfig, repeat_date_variable_name: str = "TAKLER_DATE"):
+    scheduling_type = scheduling_config.scheduling_type
+    if scheduling_type == "RepeatDate":
+        start_date = scheduling_config.start_date.strftime("%Y%m%d")
+        end_date = scheduling_config.end_date.strftime("%Y%m%d")
+        node.add_repeat(RepeatDate(repeat_date_variable_name, start_date, end_date))
+    elif scheduling_type == "RepeatDay":
+        raise ValueError("RepeatDay is not implemented")
+    else:
+        raise ValueError(f"scheduling type is not supported: {scheduling_type}")
+
+#-----------------------------------------
+
 def slurm_serial_job(class_name: str = "serial", workload_key: Optional[str] = None) -> dict:
     params = dict(
         TAKLER_SHELL_JOB_CMD=slurm_job_cmd,
@@ -79,3 +104,15 @@ def shell_job():
         TAKLER_SHELL_JOB_CMD=DEFAULT_TAKLER_SHELL_JOB_CMD,
         TAKLER_SHELL_KILL_CMD=DEFAULT_TAKLER_SHELL_KILL_CMD
     )
+
+#------------------------------------
+def load_module_from_file_path(module_name: str, file_path: Union[str, Path]) -> ModuleType:
+    """
+    load python module from a file path using module name.
+    """
+    module_name = "suite_config"
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    config_module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = config_module
+    spec.loader.exec_module(config_module)
+    return config_module
